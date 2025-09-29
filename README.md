@@ -1,56 +1,90 @@
-# Research ACE (Assistant Code Execution) Service
+# Photo Restoration & Colorization Pipeline
 
-Architecture doc: https://www.notion.so/openai/Assistant-Code-Execution-ACE-Service-Architecture-Proposal-8f2bade778cd43d6bbe090dcc897eb8b
+This project provides a reproducible workflow to **restore** and **colorize** old photos using state-of-the-art models.  
+It separates the stack into two virtual environments to avoid dependency conflicts:
+- **Restore** (`venv-photofix-restore`): Real-ESRGAN, GFPGAN, CodeFormer
+- **Diffuse** (`venv-photofix-diffuse`): Stable Diffusion (diffusers/transformers)
 
-The entry point to the project is `bin/dev.py`. This doc highlights important operations to know about, but is not an exhaustive list. For the rest, call `bin/dev.py` and its subcommands with `--help`.
+An orchestrator script ties everything together and produces a **contact sheet** with multiple restoration/colorization variants so you can quickly pick the best-looking output.
 
-## Pre Commit Hook
+---
 
-Run `pre-commit install -t pre-push` in the git directory after cloning the repository.
+## For Users
 
-## Local Development
+### Prerequisites
+- Python 3.11
+- `virtualenv` installed (`python3 -m pip install virtualenv`)
+- macOS with Apple Silicon (M1/M2/M3) preferred, uses PyTorch MPS acceleration
 
-**Note**: This is tested for `kubectl` version 1.22.X. If you run into issues and have a different version, try upgrading/downgrading (easiest way is rerunning `bin/boostrap.sh` in `workstation-config`).
+### Setup
+1. Clone this repo and `cd` into it.
+2. Create the two virtual environments:
 
-Install kind and docker for desktop: https://kind.sigs.k8s.io/docs/user/quick-start/
+```bash
+# Restore env
+python3 -m venv venv-photofix-restore
+source venv-photofix-restore/bin/activate
+pip install --upgrade pip
+pip install torch==2.5.1 torchvision==0.20.1
+pip install numpy==1.26.4 opencv-python==4.8.1.78 pillow tqdm
+pip install basicsr==1.4.2 facexlib==0.3.0 realesrgan==0.3.0 gfpgan==1.3.8
+deactivate
 
-Then complete the rest of the setup via:
-
-```
-./bin/dev.py local setup
-```
-
-**Note**: From this step, if you see the kind cluster successfully created but shows this error: `The connection to the server 127.0.0.1:<port_number> was refused - did you specify the right host or port?`, one potential reason is that the `$DOCKER_HOST` environment variable is override (e.g., if you followed [applied eng onboarding](https://www.notion.so/openai/Applied-Technical-Onboarding-ee31b0e5411e405e8076ae0750bafbc0#3c26ce6cdea34cc2a68378d9838612e9), the DOCKER_HOST is pointing to buildbox). Setting `export DOCKER_HOST=''` to let docker client talk to the default local docker daemon fixes this issue.
-
-There's no stand-alone "build" step exposed by this script, because most of the functionality is tied to the kubernetes api. Here's what you'd do to build and test the project:
-
-```
-./bin/dev.py local deploy
-./bin/dev.py test
-```
-
-## Ad-hoc Testing
-
-For debugging, you can `ace_cli` directly to run code against ACE from the command line. To against a local cluster, you can just run the following command under `ace/lib/`:
-
-```
-python -m ace_cli --code "print('hi')" --host localhost
-```
-
-(optionally add `--allow_internet`)
-
-Here's how you can run code against a production cluster:
-
-```
-python -m ace_cli -c <CREDENTIALS_DIR> --code "print('hi')" --host <HOST>
+# Diffuse env
+python3 -m venv venv-photofix-diffuse
+source venv-photofix-diffuse/bin/activate
+pip install --upgrade pip
+pip install torch==2.5.1 torchvision==0.20.1
+pip install numpy==1.26.4 pillow tqdm safetensors
+pip install transformers==4.44.2 accelerate==0.33.0 diffusers==0.30.0
+deactivate
 ```
 
-`CREDENTIALS_DIR`` is the path prefix for the `client.crt`` and `client.key`` files you received from last pass.
+3. Ensure `weights/` contains:
+   - `realesr-general-x4v3.pth`
+   - `GFPGANv1.4.pth`
+   - `codeformer.pth`
 
-## Local disk space
+### Usage
+Run the orchestrator with an input photo:
 
-Make sure your docker VM has enough disk space assigned to it (Matt's configuration is 312GB to be safe). You may start
-seeing AceTooManyRequestsException errors otherwise. Often this can be from unused images, which you can clear with:
+```bash
+./orchestrate.sh path/to/photo.jpg outputs
+```
 
-     docker image prune
-     docker system prune`
+This will generate:
+- `00_input.png` (original)
+- `01_upscaled.png` (Real-ESRGAN)
+- `02_gfpgan.png` (GFPGAN face-restored)
+- `10_sd_seed*.png` (Stable Diffusion colorizations with different seeds)
+- `contact_sheet.jpg` (grid of all results for easy comparison)
+
+---
+
+## For Maintainers
+
+### Structure
+- `scripts/restore_generate.py`  
+  Runs in `venv-photofix-restore`. Upscales with Real-ESRGAN and restores with GFPGAN.
+- `scripts/diffuse_colorize.py`  
+  Runs in `venv-photofix-diffuse`. Uses Stable Diffusion (img2img) for colorization.
+- `scripts/contact_sheet.py`  
+  Assembles all generated variants into one grid.
+- `orchestrate.sh`  
+  Shell wrapper that switches envs and runs the above in sequence.
+
+### Notes
+- **Environment split** is deliberate to prevent `torchvision/transformers` incompatibilities.
+- `weights/` is not committed; users must download required `.pth` files separately.
+- Add new models by extending `restore_generate.py` or `diffuse_colorize.py`.
+- Keep package pins strict to avoid breakage (`torch==2.5.1`, `torchvision==0.20.1`, `numpy==1.26.4`, etc.).
+
+### Roadmap
+- Optional integration of CodeFormer (face fidelity control).
+- Support for LaMa (inpainting scratches/tears).
+- GUI wrapper (e.g., streamlit) for non-technical users.
+
+---
+
+## License
+MIT (or adjust if you prefer another).
