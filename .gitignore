@@ -5,3 +5,5 @@ venv-photofix-restore
 venv-photofix-diffuse
 .archive
 
+out
+.DS_Store
