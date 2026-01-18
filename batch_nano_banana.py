@@ -2,14 +2,13 @@ import os
 import time
 import re
 import argparse
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from PIL import Image
-from google.api_core import exceptions  # <--- REQUIRED for catching 429 errors
-# Make sure you have this import at the top!
 from google.api_core import exceptions
 
 # --- CONFIGURATION ---
-API_KEY = os.getenv("API_KEY")
+API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("API_KEY")
 
 if not API_KEY:
     raise ValueError("API_KEY not found. Please run: export API_KEY='Your_Key'")
@@ -28,9 +27,10 @@ VALID_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.webp')
 # ---------------------
 
 def setup(output_folder):
-    genai.configure(api_key=API_KEY)
+    client = genai.Client(api_key=API_KEY)
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
+    return client
 
 def extract_wait_time(error_message):
     """Finds 'retry in 38.39s' in the error message."""
@@ -40,9 +40,19 @@ def extract_wait_time(error_message):
     return 60.0 # Default to 60s if parse fails
 
 
+def extract_inline_image_bytes(response):
+    for candidate in getattr(response, "candidates", []) or []:
+        content = getattr(candidate, "content", None)
+        for part in getattr(content, "parts", []) or []:
+            inline_data = getattr(part, "inline_data", None)
+            data = getattr(inline_data, "data", None)
+            if data:
+                return data
+    return None
+
+
 def process_images(input_folder, output_folder):
-    setup(output_folder)
-    model = genai.GenerativeModel(MODEL_NAME)
+    client = setup(output_folder)
     
     if not os.path.exists(input_folder):
         print(f"Error: Input folder '{input_folder}' does not exist.")
@@ -75,13 +85,25 @@ def process_images(input_folder, output_folder):
                 
                 # --- THE FIX IS HERE ---
                 # We force a 120-second timeout. If it takes longer, we kill it and retry.
-                response = model.generate_content(
-                    [PROMPT, img],
-                    request_options={'timeout': 30} 
+                image_part = types.Part.from_image(
+                    image=img,
+                    config=types.MediaResolution(level="ULTRA_HIGH"),
                 )
-                
-                if response.parts:
-                    image_data = response.parts[0].inline_data.data
+
+                response = client.models.generate_content(
+                    model=MODEL_NAME,
+                    contents=[
+                        types.Part.from_text(PROMPT),
+                        image_part,
+                    ],
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE"],
+                    ),
+                    request_options={"timeout": 30},
+                )
+
+                image_data = extract_inline_image_bytes(response)
+                if image_data:
                     with open(output_path, 'wb') as f:
                         f.write(image_data)
                     print(f"   -> Saved.")
