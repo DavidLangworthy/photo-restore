@@ -41,6 +41,7 @@ python split_album_corners.py \
   --margin 12
 
 
+
 python sweep_corners.py \
   --image "/Users/dlan/Pictures/Scans/Photo/Album Memories 04/Album Memories 04_001.JPG" \
   --out "/Users/dlan/Album Memories 04 PySplitDebug/001" \
@@ -136,4 +137,23 @@ python box_split_ff0000.py \
   --margin 2 --rmin 220 --gmax 40 --bmax 40 --dilate 5 \
   --edge-thresh 0.05 --max-search 0.20
 
+pip install opencv-python
 
+# Correct a whole folder (recursively), writing results to OUT (mirrors subfolders)
+python auto_correct_photos.py \
+  --input "/Users/dlan/Pictures/Scans/Photo/Temp" \
+  --out "/Users/dlan/Pictures/Corrected" \
+  --recursive
+
+python convert_tif_to_jpg.py --input "Users/dlan/Pictures/Corrected" --recursive
+
+# Correct a single image
+python auto_correct_photos.py --input "/path/to/photo.jpg" --out "/path/to/out"
+
+python auto_correct_bw.py \
+  --input "/Users/dlan/Album Memories 06 Split" \
+  --out "/Users/dlan/Album Memories 06 Split Corrected Smart" \
+  --recursive  \
+  --keep-color-sat-mean 0.20 --keep-color-sat-p95 0.35 \
+  --keep-color-frac 0.12 --keep-color-chroma-mean 22.0 --keep-color-chroma-p90 35.0 \
+  --min-hue-bins 5 --max-dominant-bin 0.45 --max-yellow-frac 0.55 --b-sepia-cut 15.0
