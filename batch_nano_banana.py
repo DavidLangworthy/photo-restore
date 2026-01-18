@@ -15,8 +15,15 @@ if not API_KEY:
     raise ValueError("API_KEY not found. Please run: export API_KEY='Your_Key'")
 
 MODEL_NAME = "gemini-3-pro-image-preview"
-#PROMPT = "Give me a 60's Kodachrome restoration of this photo. Maintain recognizability of the people. Try and make all the objects sharp and clear but otherwise the same. Attempt to correct any obvious lighting errors and focus blur, but again due not change the details of the photo.  In particular keep facial details the same.  It is a family albumn. Render a white border so it looks like a photo print. You can get rid of the black corners that held the original in the album."
-PROMPT = "Rerender this image in a high-fidelity, cinematic lighting style, keeping the original composition. Try and make all the objects sharp and clear but otherwise the same. Remember that the final image should be in color. Attempt to correct any obvious lighting errors and focus blur, but again due not change the details of the photo.  In particular keep facial details the same.  It is a family album. Some of the photos may have a white boarder. Crop this out and do not include it in the rendered image."
+PROMPT = """
+Rerender this image in a high-fidelity, cinematic lighting style, keeping the original composition. 
+Try and make all the objects sharp and clear but otherwise the same. Remember that the final image 
+should be in color. Attempt to correct any obvious lighting errors and focus blur, but again due not 
+change the details of the photo.  In particular keep facial details the same, same gaze and same expression.  
+It is a family album. Some of the photos may have a white boarder. Crop this out and do not include 
+it in the rendered image.
+"""
+
 VALID_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.webp')
 # ---------------------
 
