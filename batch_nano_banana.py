@@ -67,7 +67,8 @@ def process_images(input_folder, output_folder):
 
     for index, filename in enumerate(files):
         input_path = os.path.join(input_folder, filename)
-        output_filename = f"c_{filename}"
+        name, ext = os.path.splitext(filename)
+        output_filename = f"{name}_c{ext}"
         output_path = os.path.join(output_folder, output_filename)
 
         if os.path.exists(output_path):
