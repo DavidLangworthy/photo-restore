@@ -3,6 +3,7 @@ import time
 import re
 import argparse
 import exifread
+import io
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -41,6 +42,20 @@ def extract_wait_time(error_message):
     return 60.0 # Default to 60s if parse fails
 
 
+def extract_xmp_text(image_path):
+    try:
+        with open(image_path, 'rb') as f:
+            data = f.read()
+        start = data.find(b"<x:xmpmeta")
+        end = data.find(b"</x:xmpmeta>")
+        if start != -1 and end != -1:
+            end += len(b"</x:xmpmeta>")
+            return data[start:end].decode("utf-8", errors="replace")
+    except Exception:
+        return None
+    return None
+
+
 def get_image_label(image_path):
     try:
         with open(image_path, 'rb') as f:
@@ -49,8 +64,40 @@ def get_image_label(image_path):
         if label:
             return str(label)
     except Exception:
+        pass
+
+    xmp_text = extract_xmp_text(image_path)
+    if not xmp_text:
         return None
+
+    match = re.search(r'xmp:Label="([^"]+)"', xmp_text)
+    if match:
+        return match.group(1)
+    match = re.search(r'photoshop:LabelColor="([^"]+)"', xmp_text)
+    if match:
+        return match.group(1)
     return None
+
+
+def get_image_keywords(image_path):
+    xmp_text = extract_xmp_text(image_path)
+    if not xmp_text:
+        return []
+    subject_match = re.search(r"<dc:subject>(.*?)</dc:subject>", xmp_text, re.DOTALL)
+    if not subject_match:
+        return []
+    subject_block = subject_match.group(1)
+    return re.findall(r"<rdf:li>([^<]+)</rdf:li>", subject_block)
+
+
+def has_blue_label_or_keyword(image_path):
+    label = get_image_label(image_path)
+    if label and "blue" in label.lower():
+        return True
+    for keyword in get_image_keywords(image_path):
+        if "blue" in keyword.lower():
+            return True
+    return False
 
 
 def extract_inline_image_bytes(response):
@@ -62,6 +109,46 @@ def extract_inline_image_bytes(response):
             if data:
                 return data
     return None
+
+
+def build_image_part(img):
+    if hasattr(types.Part, "from_image"):
+        return types.Part.from_image(
+            image=img,
+            config=types.MediaResolution(
+                level=types.PartMediaResolutionLevel.MEDIA_RESOLUTION_ULTRA_HIGH
+            ),
+        )
+
+    buffer = io.BytesIO()
+    image_format = (img.format or "JPEG").upper()
+    if image_format not in ("JPEG", "PNG", "WEBP"):
+        image_format = "JPEG"
+    img.save(buffer, format=image_format)
+    mime_type = "image/jpeg" if image_format == "JPEG" else f"image/{image_format.lower()}"
+    return types.Part.from_bytes(
+        data=buffer.getvalue(),
+        mime_type=mime_type,
+        media_resolution=types.PartMediaResolutionLevel.MEDIA_RESOLUTION_ULTRA_HIGH,
+    )
+
+
+def generate_content(client, model, contents, config):
+    try:
+        return client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=config,
+            request_options={"timeout": 30},
+        )
+    except TypeError as e:
+        if "request_options" in str(e):
+            return client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config,
+            )
+        raise
 
 
 def process_images(input_folder, output_folder):
@@ -85,8 +172,7 @@ def process_images(input_folder, output_folder):
         output_path = os.path.join(output_folder, output_filename)
 
         if os.path.exists(output_path):
-            label = get_image_label(input_path)
-            if label and "Blue" in label:
+            if has_blue_label_or_keyword(output_path):
                 output_filename = f"{name}_c2{ext}"
                 output_path = os.path.join(output_folder, output_filename)
                 if os.path.exists(output_path):
@@ -106,21 +192,18 @@ def process_images(input_folder, output_folder):
                 
                 # --- THE FIX IS HERE ---
                 # We force a 120-second timeout. If it takes longer, we kill it and retry.
-                image_part = types.Part.from_image(
-                    image=img,
-                    config=types.MediaResolution(level="ULTRA_HIGH"),
-                )
+                image_part = build_image_part(img)
 
-                response = client.models.generate_content(
+                response = generate_content(
+                    client,
                     model=MODEL_NAME,
                     contents=[
-                        types.Part.from_text(PROMPT),
+                        types.Part.from_text(text=PROMPT),
                         image_part,
                     ],
                     config=types.GenerateContentConfig(
                         response_modalities=["IMAGE"],
                     ),
-                    request_options={"timeout": 30},
                 )
 
                 image_data = extract_inline_image_bytes(response)

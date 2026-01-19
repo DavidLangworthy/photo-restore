@@ -157,3 +157,6 @@ python auto_correct_bw.py \
   --keep-color-sat-mean 0.20 --keep-color-sat-p95 0.35 \
   --keep-color-frac 0.12 --keep-color-chroma-mean 22.0 --keep-color-chroma-p90 35.0 \
   --min-hue-bins 5 --max-dominant-bin 0.45 --max-yellow-frac 0.55 --b-sepia-cut 15.0
+
+
+  python batch_nano_banana.py -i "/Users/david/Pictures/6401/1928 to 1939" -o "/Users/david/Pictures/6401/1928 to 1939 Color"
