@@ -2,6 +2,7 @@ import os
 import time
 import re
 import argparse
+import exifread
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -40,6 +41,18 @@ def extract_wait_time(error_message):
     return 60.0 # Default to 60s if parse fails
 
 
+def get_image_label(image_path):
+    try:
+        with open(image_path, 'rb') as f:
+            tags = exifread.process_file(f, details=False)
+        label = tags.get('Image Label')
+        if label:
+            return str(label)
+    except Exception:
+        return None
+    return None
+
+
 def extract_inline_image_bytes(response):
     for candidate in getattr(response, "candidates", []) or []:
         content = getattr(candidate, "content", None)
@@ -72,7 +85,14 @@ def process_images(input_folder, output_folder):
         output_path = os.path.join(output_folder, output_filename)
 
         if os.path.exists(output_path):
-            continue
+            label = get_image_label(input_path)
+            if label and "Blue" in label:
+                output_filename = f"{name}_c2{ext}"
+                output_path = os.path.join(output_folder, output_filename)
+                if os.path.exists(output_path):
+                    continue
+            else:
+                continue
 
         print(f"[{index+1}/{total}] Processing {filename}...")
 
