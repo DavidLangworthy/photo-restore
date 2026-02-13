@@ -11,6 +11,8 @@
         --text: #e8e8ea;
         --muted: #a4a7b2;
         --border: #2b2d36;
+        --move-duration: 900ms;
+        --fade-duration: 1500ms;
       }
 
       * { box-sizing: border-box; }
@@ -59,6 +61,7 @@
       }
 
       .tile {
+        --frame-aspect-ratio: 4 / 3;
         border: 1px solid var(--border);
         background: var(--panel);
         border-radius: 10px;
@@ -72,7 +75,7 @@
 
       .frame {
         position: relative;
-        aspect-ratio: 4 / 3;
+        aspect-ratio: var(--frame-aspect-ratio, 4 / 3);
         background: #111;
         overflow: hidden;
       }
@@ -82,15 +85,57 @@
         inset: 0;
         width: 100%;
         height: 100%;
-        object-fit: cover;
+        object-fit: contain;
         object-position: center;
         display: block;
-        transition: opacity 0.8s ease;
+        transition: opacity var(--fade-duration) cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      .gallery-backdrop {
+        position: fixed;
+        inset: 0;
+        opacity: 0;
+        z-index: 1100;
+        cursor: zoom-out;
+        background: rgba(6, 7, 10, 0.32);
+        backdrop-filter: blur(6px);
+        transition: opacity 300ms ease;
+        pointer-events: auto;
+      }
+
+      .gallery-backdrop.active {
+        opacity: 1;
+      }
+
+      .tile-overlay {
+        position: fixed;
+        margin: 0;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--panel);
+        overflow: hidden;
+        z-index: 1101;
+        transition:
+          top var(--move-duration) cubic-bezier(0.2, 1, 0.3, 1),
+          left var(--move-duration) cubic-bezier(0.2, 1, 0.3, 1),
+          width var(--move-duration) cubic-bezier(0.2, 1, 0.3, 1),
+          height var(--move-duration) cubic-bezier(0.2, 1, 0.3, 1),
+          opacity 360ms ease;
+      }
+
+      .tile-overlay .caption {
+        display: none;
+      }
+
+      .tile-overlay .frame {
+        aspect-ratio: auto;
+        height: 100%;
       }
 
       .color { opacity: 1; }
       .bw { opacity: 1; }
       .tile.revealed .bw { opacity: 0; }
+      .tile-overlay.revealed .bw { opacity: 0; }
 
       .caption {
         padding: 9px 10px;
@@ -191,11 +236,221 @@
       const stats = { total: 0, loaded: 0, failed: 0 };
       const failed = [];
       const MAX_LISTED_FAILURES = 20;
+      const DEFAULT_ASPECT = 4 / 3;
+      const pairRatios = new Array(pairsBw.length);
+      const OPEN_ANIMATION_MS = 920;
+      const CLOSE_ANIMATION_MS = 920;
+      function setTileAspect(index, tile, width, height) {
+        if (!width || !height) {
+          return;
+        }
+        const ratio = width / height;
+        if (!Number.isFinite(ratio) || ratio <= 0) {
+          return;
+        }
+        pairRatios[index] = ratio;
+        tile.style.setProperty('--frame-aspect-ratio', String(ratio));
+      }
+
+      const zoomState = {
+        sourceTile: null,
+        overlayTile: null,
+        backdrop: null,
+        startRect: null,
+        status: 'idle',
+        index: -1,
+        openTimer: null,
+        closeTimer: null
+      };
       const protocolHint = {
         file: '',
         http: 'If you are serving via HTTP/HTTPS, local file:// URLs are blocked by browsers. Open this page directly as a file:// URL, or run a local server that exposes both image folders.',
         https: 'If you are serving via HTTPS, local file:// URLs are blocked by browsers. Open this page directly as a file:// URL, or run a local server that exposes both image folders.'
       };
+
+      function getCenteredRect(aspectRatio) {
+        const maxW = Math.floor(window.innerWidth * 0.86);
+        const maxH = Math.floor(window.innerHeight * 0.86);
+        const ratio = aspectRatio > 0 ? aspectRatio : DEFAULT_ASPECT;
+        let width = maxW;
+        let height = Math.round(width / ratio);
+
+        if (height > maxH) {
+          height = maxH;
+          width = Math.round(height * ratio);
+        }
+
+        return {
+          width,
+          height,
+          left: Math.max(0, Math.round((window.innerWidth - width) / 2)),
+          top: Math.max(0, Math.round((window.innerHeight - height) / 2))
+        };
+      }
+
+      function cleanupZoom() {
+        if (zoomState.backdrop) {
+          zoomState.backdrop.remove();
+        }
+        if (zoomState.openTimer) {
+          window.clearTimeout(zoomState.openTimer);
+        }
+        if (zoomState.closeTimer) {
+          window.clearTimeout(zoomState.closeTimer);
+        }
+        zoomState.sourceTile = null;
+        zoomState.overlayTile = null;
+        zoomState.backdrop = null;
+        zoomState.startRect = null;
+        zoomState.index = -1;
+        zoomState.openTimer = null;
+        zoomState.closeTimer = null;
+        zoomState.status = 'idle';
+      }
+
+      function closeZoom() {
+        if (!['opening', 'expanded'].includes(zoomState.status)) {
+          return;
+        }
+
+        const { overlayTile, startRect, sourceTile } = zoomState;
+        if (!overlayTile || !startRect || !sourceTile) {
+          cleanupZoom();
+          return;
+        }
+
+        zoomState.status = 'closing';
+        if (zoomState.openTimer) {
+          window.clearTimeout(zoomState.openTimer);
+          zoomState.openTimer = null;
+        }
+        overlayTile.classList.add('revealed');
+        overlayTile.style.top = `${startRect.top}px`;
+        overlayTile.style.left = `${startRect.left}px`;
+        overlayTile.style.width = `${startRect.width}px`;
+        overlayTile.style.height = `${startRect.height}px`;
+
+        let done = false;
+        const finalize = () => {
+          if (done) {
+            return;
+          }
+          done = true;
+          sourceTile.classList.add('revealed');
+          cleanupZoom();
+        };
+
+        const finalizeClose = (evt) => {
+          if (evt.target !== overlayTile || evt.propertyName !== 'top') {
+            return;
+          }
+          overlayTile.removeEventListener('transitionend', finalizeClose);
+          finalize();
+        };
+
+        overlayTile.addEventListener('transitionend', finalizeClose);
+        zoomState.closeTimer = window.setTimeout(finalize, CLOSE_ANIMATION_MS + 40);
+      }
+
+      function openZoom(sourceTile, index) {
+        if (zoomState.status !== 'idle' || !sourceTile) {
+          return;
+        }
+
+        const sourceFrame = sourceTile.querySelector('.frame');
+        const sourceRect = sourceFrame.getBoundingClientRect();
+        if (!sourceRect.width || !sourceRect.height) {
+          sourceTile.classList.toggle('revealed');
+          return;
+        }
+
+        const overlay = sourceTile.cloneNode(true);
+        overlay.className = 'tile-overlay';
+        overlay.dataset.zoomed = 'true';
+        overlay.style.top = `${sourceRect.top}px`;
+        overlay.style.left = `${sourceRect.left}px`;
+        overlay.style.width = `${sourceRect.width}px`;
+        overlay.style.height = `${sourceRect.height}px`;
+        overlay.classList.remove('revealed');
+        const overlayCaption = overlay.querySelector('.caption');
+        if (overlayCaption) {
+          overlayCaption.style.display = 'none';
+        }
+        overlay.addEventListener('click', (event) => {
+          if (zoomState.status === 'expanded' || zoomState.status === 'opening') {
+            event.preventDefault();
+            event.stopPropagation();
+            closeZoom();
+          }
+        });
+
+        const backdrop = document.createElement('div');
+        backdrop.className = 'gallery-backdrop';
+        backdrop.appendChild(overlay);
+        document.body.appendChild(backdrop);
+        requestAnimationFrame(() => {
+          backdrop.classList.add('active');
+        });
+
+        zoomState.sourceTile = sourceTile;
+        zoomState.overlayTile = overlay;
+        zoomState.backdrop = backdrop;
+        zoomState.startRect = {
+          top: sourceRect.top,
+          left: sourceRect.left,
+          width: sourceRect.width,
+          height: sourceRect.height
+        };
+        zoomState.status = 'opening';
+        zoomState.index = index;
+
+        backdrop.addEventListener('click', (event) => {
+          if (event.target !== backdrop) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          closeZoom();
+        });
+
+        const centered = getCenteredRect(pairRatios[index] || DEFAULT_ASPECT);
+        requestAnimationFrame(() => {
+          overlay.style.top = `${centered.top}px`;
+          overlay.style.left = `${centered.left}px`;
+          overlay.style.width = `${centered.width}px`;
+          overlay.style.height = `${centered.height}px`;
+        });
+
+        let done = false;
+        const finishOpen = (evt) => {
+          if (zoomState.status !== 'opening' || zoomState.overlayTile !== overlay) {
+            return;
+          }
+          if (done) {
+            return;
+          }
+          if (evt && evt.target && (evt.target !== overlay || evt.propertyName !== 'top')) {
+            return;
+          }
+          done = true;
+          overlay.removeEventListener('transitionend', finishOpen);
+          overlay.classList.add('revealed');
+          zoomState.status = 'expanded';
+          sourceTile.classList.remove('revealed');
+          if (zoomState.openTimer) {
+            window.clearTimeout(zoomState.openTimer);
+            zoomState.openTimer = null;
+          }
+        };
+
+        overlay.addEventListener('transitionend', finishOpen);
+        zoomState.openTimer = window.setTimeout(() => {
+          if (done) {
+            return;
+          }
+          finishOpen({ target: overlay, propertyName: 'top' });
+        }, OPEN_ANIMATION_MS + 40);
+      }
 
       function logEvent(type, message) {
         const line = document.createElement('div');
@@ -303,9 +558,15 @@
         bw.alt = `${bwName} black and white`;
         bw.src = bwSrc;
 
-        color.addEventListener('load', () => { logImageStatus('Color', colorName, colorSrc, true); });
+        color.addEventListener('load', () => {
+          setTileAspect(i, tile, color.naturalWidth, color.naturalHeight);
+          logImageStatus('Color', colorName, colorSrc, true);
+        });
         color.addEventListener('error', () => { logImageStatus('Color', colorName, colorSrc, false); });
-        bw.addEventListener('load', () => { logImageStatus('B/W', bwName, bwSrc, true); });
+        bw.addEventListener('load', () => {
+          setTileAspect(i, tile, bw.naturalWidth, bw.naturalHeight);
+          logImageStatus('B/W', bwName, bwSrc, true);
+        });
         bw.addEventListener('error', () => { logImageStatus('B/W', bwName, bwSrc, false); });
 
         frame.appendChild(color);
@@ -318,8 +579,29 @@
         tile.appendChild(frame);
         tile.appendChild(caption);
 
-        tile.addEventListener('click', () => {
-          tile.classList.toggle('revealed');
+        tile.addEventListener('click', (event) => {
+          if (zoomState.status === 'expanded') {
+            if (zoomState.sourceTile === tile) {
+              event.preventDefault();
+              event.stopPropagation();
+              closeZoom();
+            }
+            return;
+          }
+
+          if (zoomState.status !== 'idle') {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+
+          if (tile.classList.contains('revealed')) {
+            tile.classList.remove('revealed');
+            return;
+          }
+
+          event.preventDefault();
+          openZoom(tile, i);
         });
 
         gallery.appendChild(tile);
