@@ -1,0 +1,4 @@
+google-genai
+pillow
+exifread
+google-api-core
