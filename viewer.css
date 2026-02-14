@@ -1,0 +1,191 @@
+      :root {
+        --bg: #0f1013;
+        --panel: #17181d;
+        --text: #e8e8ea;
+        --muted: #a4a7b2;
+        --border: #2b2d36;
+        --move-duration: 900ms;
+        --fade-duration: 3000ms;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: "Inter", "Avenir", "Segoe UI", sans-serif;
+        background: radial-gradient(circle at 10% 10%, #171a22 0%, var(--bg) 45%);
+        color: var(--text);
+        min-height: 100vh;
+      }
+
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: rgba(15, 16, 19, 0.85);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--border);
+        padding: 14px 18px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(1.1rem, 2vw, 1.6rem);
+        letter-spacing: 0.02em;
+      }
+
+      .meta {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      main {
+        max-width: 1320px;
+        margin: 0 auto;
+        padding: 16px;
+      }
+
+      .grid {
+        margin-top: 18px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+        gap: 12px;
+      }
+
+      .tile {
+        --frame-aspect-ratio: 4 / 3;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        border-radius: 10px;
+        overflow: hidden;
+        text-align: left;
+        cursor: pointer;
+        padding: 0;
+        display: block;
+        width: 100%;
+      }
+
+      .frame {
+        position: relative;
+        aspect-ratio: var(--frame-aspect-ratio, 4 / 3);
+        background: #111;
+        overflow: hidden;
+      }
+
+      .frame img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        object-position: center;
+        display: block;
+        transition: opacity var(--fade-duration) cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      .gallery-backdrop {
+        position: fixed;
+        inset: 0;
+        opacity: 0;
+        z-index: 1100;
+        cursor: zoom-out;
+        background: rgba(6, 7, 10, 0.32);
+        backdrop-filter: blur(6px);
+        transition: opacity 300ms ease;
+        pointer-events: auto;
+      }
+
+      .gallery-backdrop.active {
+        opacity: 1;
+      }
+
+      .tile-overlay {
+        position: fixed;
+        margin: 0;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--panel);
+        overflow: hidden;
+        z-index: 1101;
+        transition:
+          top var(--move-duration) cubic-bezier(0.2, 1, 0.3, 1),
+          left var(--move-duration) cubic-bezier(0.2, 1, 0.3, 1),
+          width var(--move-duration) cubic-bezier(0.2, 1, 0.3, 1),
+          height var(--move-duration) cubic-bezier(0.2, 1, 0.3, 1),
+          opacity 360ms ease;
+      }
+
+      .tile-overlay .caption {
+        display: none;
+      }
+
+      .tile-overlay .frame {
+        aspect-ratio: auto;
+        height: 100%;
+      }
+
+      .color { opacity: 1; }
+      .bw { opacity: 1; }
+      .tile.revealed .bw { opacity: 0; }
+      .tile-overlay.revealed .bw { opacity: 0; }
+
+      .caption {
+        padding: 9px 10px;
+        font-size: 0.77rem;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        border-top: 1px solid var(--border);
+      }
+
+      .debug {
+        margin-top: 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(5, 6, 8, 0.9);
+        padding: 10px;
+        color: #d1d2dc;
+        font-size: 12px;
+        max-height: 220px;
+        overflow: auto;
+      }
+
+      .debug-controls {
+        display: flex;
+        gap: 10px;
+        align-items: baseline;
+        margin-bottom: 8px;
+      }
+
+      .debug-toggle {
+        margin-left: auto;
+        font-size: 11px;
+      }
+
+      .log-entry {
+        white-space: pre-wrap;
+        margin: 2px 0;
+      }
+
+      .log-entry.error {
+        color: #ff9e9e;
+      }
+
+      .log-entry.info {
+        color: #9fcfff;
+      }
+
+      .status-note {
+        margin: 8px 0 0;
+        color: #ffcc66;
+        font-size: 11px;
+      }
+
+      @media (max-width: 640px) {
+        .grid {
+          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+          gap: 10px;
+        }
+      }

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>1928–1939 B/W to Color</title>
+    <link rel="stylesheet" href="./viewer.css" />
+  </head>
+  <body>
+    <header>
+      <h1>1928–1939 B/W to Color Pair Viewer</h1>
+      <div class="meta"><a href="./index.html" style="color: inherit;">Back to Collections</a></div>
+      <div class="meta">Click a thumbnail to expand and toggle between B/W and color.</div>
+      <div class="meta" id="count"></div>
+      <div id="debug" class="debug">
+        <div class="debug-controls">
+          <strong>Image load log</strong>
+          <button id="debugToggle" class="debug-toggle" type="button">Hide</button>
+        </div>
+        <div id="log"></div>
+        <div id="statusNote" class="status-note"></div>
+      </div>
+    </header>
+    <main>
+      <section id="gallery" class="grid" aria-live="polite"></section>
+    </main>
+
+    <script>
+      window.BW_DIR = location.protocol === 'file:'
+        ? 'file:///Users/david/Pictures/6401/1928%20to%201939'
+        : './local_bw';
+      window.COLOR_DIR = location.protocol === 'file:'
+        ? 'file:///Users/david/Pictures/6401/1928%20to%201939%20High'
+        : './local_color';
+    </script>
+    <script src="./first_pair_arrays.js"></script>
+    <script src="./viewer.js"></script>
+  </body>
+</html>
