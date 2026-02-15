@@ -9,13 +9,16 @@
   <body>
     <header>
       <h1>1928–1939 B/W to Color Pair Viewer</h1>
-      <div class="meta"><a href="./index.html" style="color: inherit;">Back to Collections</a></div>
-      <div class="meta">Click a thumbnail to expand and toggle between B/W and color.</div>
-      <div class="meta" id="count"></div>
-      <div id="debug" class="debug">
+      <div class="header-controls">
+        <a class="back-fab" href="./index.html" aria-label="Back to Collections">← Collections</a>
+        <button id="debugToggle" class="back-fab" type="button" aria-label="Toggle logs">Logs</button>
+      </div>
+      <div id="count" class="sr-only"></div>
+      <div id="ratingSummary" class="sr-only"></div>
+      <div id="shortcutHint" class="sr-only"></div>
+      <div id="debug" class="debug" style="display: none;">
         <div class="debug-controls">
           <strong>Image load log</strong>
-          <button id="debugToggle" class="debug-toggle" type="button">Hide</button>
         </div>
         <div id="log"></div>
         <div id="statusNote" class="status-note"></div>
@@ -26,11 +29,15 @@
     </main>
 
     <script>
+      window.RATING_SCOPE = '1928-1939';
       window.BW_DIR = location.protocol === 'file:'
         ? 'file:///Users/david/Pictures/6401/1928%20to%201939'
         : './local_bw';
-      window.COLOR_DIR = location.protocol === 'file:'
+      window.HIGH_DIR = location.protocol === 'file:'
         ? 'file:///Users/david/Pictures/6401/1928%20to%201939%20High'
+        : './local_high';
+      window.COLOR_DIR = location.protocol === 'file:'
+        ? 'file:///Users/david/Pictures/6401/1928%20to%201939%20Color'
         : './local_color';
     </script>
     <script src="./first_pair_arrays.js"></script>
