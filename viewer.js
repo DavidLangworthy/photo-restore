@@ -55,7 +55,8 @@
         navigationTimer: null,
         isModeFading: false,
         modeFadeImage: null,
-        modeFadeHandler: null
+        modeFadeHandler: null,
+        pendingRatingRefreshes: new Set()
       };
 
       const protocolHint = {
@@ -159,6 +160,12 @@
             zoomState.modeFadeHandler = null;
             zoomState.isModeFading = false;
             if (zoomState.status === 'expanded' && zoomState.overlayTile === overlay) {
+              if (zoomState.pendingRatingRefreshes && zoomState.pendingRatingRefreshes.size > 0) {
+                zoomState.pendingRatingRefreshes.forEach((indexToRefresh) => {
+                  syncRatingForIndex(indexToRefresh);
+                });
+                zoomState.pendingRatingRefreshes.clear();
+              }
               flushQueuedNavigation();
             }
           }
@@ -491,6 +498,9 @@
         }
 
         syncRatingForIndex(index);
+        if (zoomState.isModeFading && zoomState.pendingRatingRefreshes) {
+          zoomState.pendingRatingRefreshes.add(index);
+        }
         updateRatingSummary();
         persistRatings();
         persistRatingModes();
@@ -594,6 +604,9 @@
         zoomState.isNavigating = false;
         zoomState.queuedNavigation = [];
         zoomState.isModeFading = false;
+        if (zoomState.pendingRatingRefreshes) {
+          zoomState.pendingRatingRefreshes.clear();
+        }
         zoomState.modeFadeImage = null;
         zoomState.modeFadeHandler = null;
         zoomState.status = 'idle';
@@ -833,6 +846,9 @@
         zoomState.isNavigating = false;
         zoomState.queuedNavigation = [];
         zoomState.isModeFading = false;
+        if (zoomState.pendingRatingRefreshes) {
+          zoomState.pendingRatingRefreshes.clear();
+        }
 
         const sourceFrame = sourceTile.querySelector('.frame');
         const sourceRect = sourceFrame.getBoundingClientRect();
