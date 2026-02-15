@@ -55,8 +55,7 @@
         navigationTimer: null,
         isModeFading: false,
         modeFadeImage: null,
-        modeFadeHandler: null,
-        pendingRatingRefreshes: new Set()
+        modeFadeHandler: null
       };
 
       const protocolHint = {
@@ -160,12 +159,6 @@
             zoomState.modeFadeHandler = null;
             zoomState.isModeFading = false;
             if (zoomState.status === 'expanded' && zoomState.overlayTile === overlay) {
-              if (zoomState.pendingRatingRefreshes && zoomState.pendingRatingRefreshes.size > 0) {
-                zoomState.pendingRatingRefreshes.forEach((indexToRefresh) => {
-                  syncRatingForIndex(indexToRefresh);
-                });
-                zoomState.pendingRatingRefreshes.clear();
-              }
               flushQueuedNavigation();
             }
           }
@@ -269,24 +262,53 @@
         return `${RATING_SCOPE}::${pairsBw[index] || ''}::mode`;
       }
 
-      function getStoredRatingMode(index) {
-        const storedMode = ratingModes[ratingModeKey(index)];
-        if (storedMode === 'color') {
-          return 'color';
+      function getStoredDownModes(index) {
+        const key = ratingModeKey(index);
+        const storedMode = ratingModes[key];
+        if (storedMode === 'both') {
+          return { high: true, color: true };
         }
-        return 'high';
+        if (storedMode === 'color') {
+          return { high: false, color: true };
+        }
+        if (storedMode === 'high') {
+          return { high: true, color: false };
+        }
+        // Legacy fallback: older data stored "down without mode key" as high.
+        if (getRating(index) === 'down') {
+          return { high: true, color: false };
+        }
+        return { high: false, color: false };
       }
 
-      function setStoredRatingMode(index, mode) {
+      function persistStoredDownModes(index, modes) {
         const key = ratingModeKey(index);
-        if (mode === 'color') {
+        if (modes.high && modes.color) {
+          ratingModes[key] = 'both';
+          return;
+        }
+        if (modes.color) {
           ratingModes[key] = 'color';
+          return;
+        }
+        if (modes.high) {
+          ratingModes[key] = 'high';
           return;
         }
         delete ratingModes[key];
       }
 
-      function clearStoredRatingMode(index) {
+      function addStoredDownMode(index, mode) {
+        const modes = getStoredDownModes(index);
+        if (mode === 'color') {
+          modes.color = true;
+        } else {
+          modes.high = true;
+        }
+        persistStoredDownModes(index, modes);
+      }
+
+      function clearStoredDownModes(index) {
         delete ratingModes[ratingModeKey(index)];
       }
 
@@ -298,6 +320,27 @@
           return 'color';
         }
         return getStoredNonBwMode(index);
+      }
+
+      function getPreferredNonBwMode(index) {
+        const preferred = getStoredNonBwMode(index);
+        if (getRating(index) !== 'down') {
+          return preferred;
+        }
+        const downModes = getStoredDownModes(index);
+        if (preferred === 'color' && downModes.color) {
+          return 'color';
+        }
+        if (preferred === 'high' && downModes.high) {
+          return 'high';
+        }
+        if (downModes.color && !downModes.high) {
+          return 'color';
+        }
+        if (downModes.high && !downModes.color) {
+          return 'high';
+        }
+        return preferred;
       }
 
       function loadRatings() {
@@ -411,11 +454,17 @@
         const rating = getRating(index);
         tile.classList.remove('rated-down', 'rated-down-high', 'rated-down-color');
 
-        if (rating === 'down') {
-          const mode = getStoredRatingMode(index);
-          tile.classList.add('rated-down');
-          tile.classList.add(mode === 'color' ? 'rated-down-color' : 'rated-down-high');
+        if (rating !== 'down') {
           return;
+        }
+
+        const downModes = getStoredDownModes(index);
+        tile.classList.add('rated-down');
+        if (downModes.high) {
+          tile.classList.add('rated-down-high');
+        }
+        if (downModes.color) {
+          tile.classList.add('rated-down-color');
         }
       }
 
@@ -479,28 +528,27 @@
           return;
         }
         const key = ratingKey(index);
-        const current = ratings[key];
         if (nextValue === null) {
-          if (current !== undefined) {
+          if (ratings[key] !== undefined) {
             delete ratings[key];
-            clearStoredRatingMode(index);
+            clearStoredDownModes(index);
           }
-        } else if (current === nextValue) {
-          delete ratings[key];
-          clearStoredRatingMode(index);
         } else {
+          // Hotkeys are idempotent assignments: key repeat should not clear ratings.
           ratings[key] = nextValue;
           if (nextValue === 'down') {
-            setStoredRatingMode(index, getActiveRatingMode(index));
+            const downMode = getActiveRatingMode(index);
+            addStoredDownMode(index, downMode);
+            setStoredNonBwMode(index, downMode);
+            if (zoomState.index === index) {
+              zoomState.nonBwMode = downMode;
+            }
           } else {
-            clearStoredRatingMode(index);
+            clearStoredDownModes(index);
           }
         }
 
         syncRatingForIndex(index);
-        if (zoomState.isModeFading && zoomState.pendingRatingRefreshes) {
-          zoomState.pendingRatingRefreshes.add(index);
-        }
         updateRatingSummary();
         persistRatings();
         persistRatingModes();
@@ -604,9 +652,6 @@
         zoomState.isNavigating = false;
         zoomState.queuedNavigation = [];
         zoomState.isModeFading = false;
-        if (zoomState.pendingRatingRefreshes) {
-          zoomState.pendingRatingRefreshes.clear();
-        }
         zoomState.modeFadeImage = null;
         zoomState.modeFadeHandler = null;
         zoomState.status = 'idle';
@@ -735,9 +780,7 @@
         }
 
         const centered = getCenteredRect(pairRatios[nextIndex] || pairRatios[zoomState.index] || DEFAULT_ASPECT);
-        const restoreModeAfterNavigation = (zoomState.mode === 'high' || zoomState.mode === 'color')
-          ? zoomState.mode
-          : (zoomState.nonBwMode || getStoredNonBwMode(zoomState.index) || 'high');
+        const restoreModeAfterNavigation = getPreferredNonBwMode(nextIndex) || 'high';
         const startMode = 'bw';
         const travelDistance = Math.max(window.innerWidth, 560) * 1.08;
 
@@ -794,7 +837,6 @@
           previous.remove();
 
           incoming.style.transform = 'translateX(0px)';
-          incoming.className = 'tile-overlay';
           zoomState.overlayTile = incoming;
           zoomState.sourceTile = sourceTile;
           zoomState.startRect = {
@@ -808,6 +850,7 @@
           zoomState.mode = startMode;
           zoomState.nonBwMode = restoreModeAfterNavigation;
           zoomState.status = 'expanded';
+          syncRatingForIndex(nextIndex);
 
           if (restoreModeAfterNavigation) {
             window.requestAnimationFrame(() => {
@@ -846,9 +889,6 @@
         zoomState.isNavigating = false;
         zoomState.queuedNavigation = [];
         zoomState.isModeFading = false;
-        if (zoomState.pendingRatingRefreshes) {
-          zoomState.pendingRatingRefreshes.clear();
-        }
 
         const sourceFrame = sourceTile.querySelector('.frame');
         const sourceRect = sourceFrame.getBoundingClientRect();
@@ -903,7 +943,7 @@
         zoomState.status = 'opening';
         zoomState.index = index;
         zoomState.mode = 'bw';
-        zoomState.nonBwMode = getStoredNonBwMode(index);
+        zoomState.nonBwMode = getPreferredNonBwMode(index);
         zoomState.selectedIndex = index;
 
         backdrop.addEventListener('click', (event) => {
@@ -930,6 +970,7 @@
           overlay.removeEventListener('transitionend', finishOpen);
           zoomState.status = 'expanded';
           applyZoomMode(overlay, zoomState.nonBwMode || 'high');
+          syncRatingForIndex(index);
           if (zoomState.openTimer) {
             window.clearTimeout(zoomState.openTimer);
             zoomState.openTimer = null;
